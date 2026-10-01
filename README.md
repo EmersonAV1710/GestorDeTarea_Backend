@@ -4,7 +4,13 @@ FastAPI es la decisión de implementación para exponer la lógica Python como s
 
 ## Requisitos y arranque (Ubuntu)
 
-Instala Python 3.11+, pip y PostgreSQL. Crea una base/usuario propios, copia `.env.example` a `.env`, define `DATABASE_URL` y `JWT_SECRET`, y ejecuta `psql "$DATABASE_URL" -f sql/001_init.sql`. La aplicación **no** ejecuta migraciones automáticamente.
+Instala Python 3.11+, pip y PostgreSQL. En Ubuntu, crea rol y base interactivos (la contraseña se solicita dentro de `psql`, no queda en el historial):
+
+```bash
+sudo -u postgres psql
+```
+
+Dentro de `psql`: `CREATE ROLE gestor LOGIN;`, luego `\password gestor`, `CREATE DATABASE gestor_tareas OWNER gestor;` y `\q`. Copia `.env.example` a `.env`, configura `DATABASE_URL` con la contraseña local y un `JWT_SECRET` aleatorio largo, y aplica la migración: `psql -h localhost -U gestor -d gestor_tareas -f sql/001_init.sql`. La aplicación **no** ejecuta migraciones automáticamente; aplica los archivos SQL numerados una sola vez y en orden.
 
 ```bash
 cd ~/proyectos/GestorDeTarea_Backend

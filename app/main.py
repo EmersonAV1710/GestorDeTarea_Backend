@@ -61,7 +61,8 @@ async def analyze(course_id:UUID=Form(...),file:UploadFile=File(...),user:User=D
 def confirm(body:ConfirmIn,user:User=Depends(current_user),db:Session=Depends(get_db)):
     doc=db.scalar(select(Document).where(Document.id==body.document_id,Document.user_id==user.id))
     if not doc: raise HTTPException(404,"Documento no encontrado")
-    if db.scalar(select(Activity.id).where(Activity.document_id==doc.id)): raise HTTPException(409,"Las propuestas de este documento ya fueron confirmadas")
+    existing=list(db.scalars(select(Activity).where(Activity.document_id==doc.id,Activity.user_id==user.id)))
+    if existing: return [activity_dict(a) for a in existing]
     out=[]
     for p in body.activities:
         a=Activity(user_id=user.id,course_id=doc.course_id,document_id=doc.id,**p.model_dump());db.add(a);out.append(a)
