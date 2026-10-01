@@ -8,3 +8,4 @@ passlib[bcrypt]>=1.7,<2
 python-multipart>=0.0.9
 pypdf>=5,<7
 openai>=1.50,<3
+python-dotenv>=1.0,<2

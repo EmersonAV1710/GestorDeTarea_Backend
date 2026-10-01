@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://localhost/gestor_tareas"
-    jwt_secret: str = "development-only-change-me"
+    jwt_secret: str
     cors_origins: str = "http://localhost:3000"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
