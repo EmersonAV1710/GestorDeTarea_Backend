@@ -15,7 +15,7 @@ Dentro de `psql`: `CREATE ROLE gestor LOGIN;`, luego `\password gestor`, `CREATE
 ```bash
 cd ~/proyectos/GestorDeTarea_Backend
 python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt  # incluye pytest para las comprobaciones locales
 cp .env.example .env  # edita secretos localmente; nunca los subas
 uvicorn app.main:app --reload
 ```
@@ -38,3 +38,7 @@ pg_restore --no-owner --no-privileges -d "$DATABASE_URL" /tmp/gestor_tareas.dump
 ```
 
 Este paso es opcional y separado de la migración de esquema. Mantengan `DATABASE_URL` del destino fuera de Git y no guarden el dump en el repositorio.
+
+## Pruebas de integración
+
+Con PostgreSQL de desarrollo activo y `.env` apuntando a una base vacía con la migración aplicada, ejecuta `pytest`. Las pruebas crean datos temporales con correo `.invalid` y los eliminan al finalizar. Comprueban login, aislamiento por usuario, filtros inclusivos, orden de próximas tareas, estado completado persistente e idempotencia de confirmación; no llaman al proveedor de IA.
