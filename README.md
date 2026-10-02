@@ -26,6 +26,19 @@ No hay clave universal ni alta pública. Para preparar una cuenta local, usa `py
 
 Todas las consultas y mutaciones están acotadas al usuario autenticado. No se guardan archivos PDF; solo metadatos y propuestas confirmadas. No incluyas documentos reales, `.env`, claves ni contraseñas en Git.
 
+## Clúster local de desarrollo de esta máquina
+
+En esta máquina la base persistente está en `~/proyectos/.gestor-tareas-pg`, aislada de los repositorios. La base es `gestor_tareas`, escucha solo en localhost por el puerto `5434`, y FastAPI se conecta con el rol limitado `gestor_app` mediante el `.env` local. El clúster y el `.env` no se versionan. Para administrarlo:
+
+```bash
+cd ~/proyectos/GestorDeTarea_Backend
+./scripts/dev-db.sh status
+./scripts/dev-db.sh stop
+./scripts/dev-db.sh start
+```
+
+Para inspeccionar el esquema en esta cuenta local, conecta con `psql -h /tmp -p 5434 -U emerson -d gestor_tareas`; dentro de `psql` usa `\dt` y `\d activities`. En otra máquina, instala PostgreSQL y Python como se indica arriba, prepara su propio rol/base `.env` y aplica las migraciones SQL; no copies el `.env` de esta máquina.
+
 ## Traslado opcional de datos de prueba
 
 El uso normal no requiere exportar ni importar datos: cuando migren a Supabase, creen la base vacía y apliquen las migraciones. Si el equipo necesita conservar datos locales de desarrollo, puede exportarlos explícitamente y restaurarlos en el destino PostgreSQL; no versionen el archivo de respaldo y no usen documentos ni datos reales del curso.
