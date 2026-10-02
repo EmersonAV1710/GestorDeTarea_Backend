@@ -58,7 +58,7 @@ Con PostgreSQL de desarrollo activo y `.env` apuntando a una base vacía con la 
 
 ### Registro y acceso
 
-La pantalla permite crear una cuenta. El backend normaliza el correo, exige contraseña de 15 a 128 caracteres, bloquea contraseñas comunes seleccionadas, compara la confirmación y almacena únicamente un hash Argon2id. La interfaz muestra los requisitos y coincidencia en vivo; toda validación se repite en el servidor. Se permiten espacios internos, Unicode, pegar y usar gestores de contraseñas. No se exige una mezcla fija de mayúsculas, dígitos o símbolos.
+La pantalla permite crear una cuenta. El backend normaliza el correo, exige contraseña de 8 a 128 caracteres, bloquea contraseñas comunes seleccionadas, compara la confirmación y almacena únicamente un hash Argon2id. La interfaz muestra los requisitos y coincidencia en vivo; toda validación se repite en el servidor. Se permiten espacios internos, Unicode, pegar y usar gestores de contraseñas. No se exige una mezcla fija de mayúsculas, dígitos o símbolos. Para mayor seguridad, conviene usar una frase más larga y única; este mínimo de 8 caracteres es una decisión del proyecto y no alcanza la recomendación de NIST para contraseñas usadas como único factor.
 
 Tras tres contraseñas incorrectas, el inicio de sesión queda bloqueado durante 15 minutos. El bloqueo es temporal y se restablece tras un acceso correcto. El umbral y la duración son decisiones del producto; este bloqueo por cuenta puede permitir que terceros provoquen una espera temporal si conocen un correo.
 

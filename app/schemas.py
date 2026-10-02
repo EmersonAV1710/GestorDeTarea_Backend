@@ -10,7 +10,7 @@ def normalize_email(value:str)->str:
         raise ValueError("Ingresa un correo electrónico válido")
     return email
 def validate_password(value:str)->str:
-    if len(value)<15: raise ValueError("La contraseña debe tener al menos 15 caracteres")
+    if len(value)<8: raise ValueError("La contraseña debe tener al menos 8 caracteres")
     if len(value)>128: raise ValueError("La contraseña no puede superar 128 caracteres")
     if value.strip()!=value: raise ValueError("La contraseña no puede iniciar ni terminar con espacios")
     if value.casefold() in COMMON_PASSWORDS: raise ValueError("Elige una contraseña menos común")
@@ -34,7 +34,7 @@ class RegisterIn(BaseModel):
     @field_validator("password_confirmation")
     @classmethod
     def confirmation_length(cls,value):
-        if not 15<=len(value)<=128: raise ValueError("La confirmación debe tener entre 15 y 128 caracteres")
+        if not 8<=len(value)<=128: raise ValueError("La confirmación debe tener entre 8 y 128 caracteres")
         return value
 class CourseIn(BaseModel): name:str=Field(min_length=1,max_length=160); code:str|None=None; term:str|None=None
 class CourseOut(CourseIn): id:UUID

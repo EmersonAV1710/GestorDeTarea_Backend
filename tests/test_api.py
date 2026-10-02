@@ -174,13 +174,14 @@ def test_pdf_upload_rejects_non_pdf_and_unreadable_content(accounts):
 
 def test_registration_validates_password_and_creates_argon2_account():
     email = f"register-{uuid4().hex}@example.invalid"
-    weak = client.post("/api/auth/register", json={"email": email, "password": "Corta123!", "password_confirmation": "Corta123!"})
+    minimum_password = "Clave8ok"
+    weak = client.post("/api/auth/register", json={"email": email, "password": "corta12", "password_confirmation": "corta12"})
     assert weak.status_code == 422
-    mismatch = client.post("/api/auth/register", json={"email": email, "password": TEST_PASSWORD, "password_confirmation": "OtraClaveTemporal-2026!"})
+    mismatch = client.post("/api/auth/register", json={"email": email, "password": minimum_password, "password_confirmation": "OtraClaveTemporal-2026!"})
     assert mismatch.status_code == 422
-    created = client.post("/api/auth/register", json={"email": email.upper(), "password": TEST_PASSWORD, "password_confirmation": TEST_PASSWORD})
+    created = client.post("/api/auth/register", json={"email": email.upper(), "password": minimum_password, "password_confirmation": minimum_password})
     assert created.status_code == 201
-    duplicate = client.post("/api/auth/register", json={"email": email, "password": TEST_PASSWORD, "password_confirmation": TEST_PASSWORD})
+    duplicate = client.post("/api/auth/register", json={"email": email, "password": minimum_password, "password_confirmation": minimum_password})
     assert duplicate.status_code == 409
     with SessionLocal() as db:
         user = db.scalar(select(User).where(User.email == email))
