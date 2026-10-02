@@ -1,4 +1,4 @@
-from datetime import date,datetime,timezone
+from datetime import date,datetime,timedelta,timezone
 from uuid import UUID
 from fastapi import FastAPI,Depends,HTTPException,UploadFile,File,Form,Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .db import Base,engine,get_db
 from .models import User,Course,Document,Activity
-from .schemas import Login,CourseIn,CourseOut,ConfirmIn
-from .security import verify_password,token_for,user_id
+from .schemas import Login,RegisterIn,CourseIn,CourseOut,ConfirmIn
+from .security import verify_password,hash_password,token_for,user_id
 app=FastAPI(title="Gestor de tareas API",version="1.0.0")
 app.add_middleware(CORSMiddleware,allow_origins=[x.strip() for x in settings.cors_origins.split(",") if x.strip()],allow_credentials=True,allow_methods=["*"] ,allow_headers=["*"])
 def current_user(authorization:str|None=Header(default=None),db:Session=Depends(get_db)):
@@ -22,10 +22,41 @@ def course_dict(c): return {"id":c.id,"name":c.name,"code":c.code,"term":c.term}
 def activity_dict(a): return {"id":a.id,"title":a.title,"description":a.description,"due_date":a.due_date,"review_required":a.review_required,"status":a.status,"course_id":a.course_id,"document_id":a.document_id}
 @app.get("/api/health")
 def health(): return {"status":"ok"}
+@app.post("/api/auth/register",status_code=201)
+def register(body:RegisterIn,db:Session=Depends(get_db)):
+    if body.password != body.password_confirmation:
+        raise HTTPException(422,"Las contraseñas no coinciden")
+    if db.scalar(select(User).where(User.email==body.email)):
+        raise HTTPException(409,"No se pudo crear la cuenta con esos datos. Verifica el correo o inicia sesión.")
+    user=User(email=body.email,password_hash=hash_password(body.password))
+    db.add(user)
+    try: db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(409,"No se pudo crear la cuenta con esos datos. Verifica el correo o inicia sesión.")
+    return {"message":"Cuenta creada. Ya puedes iniciar sesión."}
 @app.post("/api/auth/login")
 def login(body:Login,db:Session=Depends(get_db)):
-    u=db.scalar(select(User).where(User.email==body.email.lower()))
-    if not u or not verify_password(body.password,u.password_hash): raise HTTPException(401,"Correo o contraseña incorrectos")
+    u=db.scalar(select(User).where(User.email==body.email))
+    now=datetime.now(timezone.utc)
+    if not u:
+        raise HTTPException(401,"Correo o contraseña incorrectos.")
+    if u.locked_until and u.locked_until > now:
+        remaining=max(1,int((u.locked_until-now).total_seconds()//60)+1)
+        raise HTTPException(429,f"Se agotaron los 3 intentos. Prueba de nuevo en {remaining} minuto(s).")
+    if not verify_password(body.password,u.password_hash):
+        u.failed_login_attempts += 1
+        if u.failed_login_attempts >= 3:
+            u.failed_login_attempts=0
+            u.locked_until=now+timedelta(minutes=15)
+            db.commit()
+            raise HTTPException(429,"Se agotaron los 3 intentos. La cuenta se bloqueó temporalmente por 15 minutos.")
+        remaining=3-u.failed_login_attempts
+        db.commit()
+        raise HTTPException(401,f"Correo o contraseña incorrectos. Te quedan {remaining} intento(s).")
+    u.failed_login_attempts=0
+    u.locked_until=None
+    db.commit()
     return {"access_token":token_for(str(u.id)),"token_type":"bearer"}
 @app.get("/api/courses")
 def courses(user:User=Depends(current_user),db:Session=Depends(get_db)): return [course_dict(c) for c in db.scalars(select(Course).where(Course.user_id==user.id).order_by(Course.name))]

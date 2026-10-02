@@ -170,3 +170,43 @@ def test_pdf_upload_rejects_non_pdf_and_unreadable_content(accounts):
         files={"file": ("nota.pdf", b"contenido que no es un PDF", "application/pdf")},
     )
     assert unreadable.status_code == 422
+
+
+def test_registration_validates_password_and_creates_argon2_account():
+    email = f"register-{uuid4().hex}@example.invalid"
+    weak = client.post("/api/auth/register", json={"email": email, "password": "Corta123!", "password_confirmation": "Corta123!"})
+    assert weak.status_code == 422
+    mismatch = client.post("/api/auth/register", json={"email": email, "password": TEST_PASSWORD, "password_confirmation": "OtraClaveTemporal-2026!"})
+    assert mismatch.status_code == 422
+    created = client.post("/api/auth/register", json={"email": email.upper(), "password": TEST_PASSWORD, "password_confirmation": TEST_PASSWORD})
+    assert created.status_code == 201
+    duplicate = client.post("/api/auth/register", json={"email": email, "password": TEST_PASSWORD, "password_confirmation": TEST_PASSWORD})
+    assert duplicate.status_code == 409
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.email == email))
+        assert user is not None and user.password_hash != TEST_PASSWORD
+        db.delete(user)
+        db.commit()
+
+
+def test_login_locks_after_three_failures_and_success_resets_counter(accounts):
+    owner, _, _, _ = accounts
+    for remaining in (2, 1):
+        response = client.post("/api/auth/login", json={"email": owner.email, "password": "contraseña incorrecta"})
+        assert response.status_code == 401
+        assert f"{remaining} intento(s)" in response.json()["detail"]
+    locked = client.post("/api/auth/login", json={"email": owner.email, "password": "contraseña incorrecta"})
+    assert locked.status_code == 429
+    assert "15 minutos" in locked.json()["detail"]
+    still_locked = client.post("/api/auth/login", json={"email": owner.email, "password": TEST_PASSWORD})
+    assert still_locked.status_code == 429
+    with SessionLocal() as db:
+        user = db.get(User, owner.id)
+        user.locked_until = None
+        user.failed_login_attempts = 2
+        db.commit()
+    good = client.post("/api/auth/login", json={"email": owner.email, "password": TEST_PASSWORD})
+    assert good.status_code == 200
+    with SessionLocal() as db:
+        user = db.get(User, owner.id)
+        assert user.failed_login_attempts == 0 and user.locked_until is None

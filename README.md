@@ -10,7 +10,7 @@ Instala Python 3.11+, pip y PostgreSQL. En Ubuntu, crea rol y base interactivos 
 sudo -u postgres psql
 ```
 
-Dentro de `psql`: `CREATE ROLE gestor LOGIN;`, luego `\password gestor`, `CREATE DATABASE gestor_tareas OWNER gestor;` y `\q`. Copia `.env.example` a `.env`, configura `DATABASE_URL` con la contraseña local y un `JWT_SECRET` aleatorio largo, y aplica la migración: `psql -h localhost -U gestor -d gestor_tareas -f sql/001_init.sql`. La aplicación **no** ejecuta migraciones automáticamente; aplica los archivos SQL numerados una sola vez y en orden. Para un PostgreSQL nuevo, establece allí `DATABASE_URL` y aplica los mismos archivos con `psql "$DATABASE_URL" -f sql/001_init.sql`.
+Dentro de `psql`: `CREATE ROLE gestor LOGIN;`, luego `\password gestor`, `CREATE DATABASE gestor_tareas OWNER gestor;` y `\q`. Copia `.env.example` a `.env`, configura `DATABASE_URL` con la contraseña local y un `JWT_SECRET` aleatorio largo, y aplica las migraciones en orden: `psql -h localhost -U gestor -d gestor_tareas -v ON_ERROR_STOP=1 -f sql/001_init.sql` y luego `psql -h localhost -U gestor -d gestor_tareas -v ON_ERROR_STOP=1 -f sql/migrations/002_auth_lockout.sql`. La aplicación **no** ejecuta migraciones automáticamente. Para un PostgreSQL nuevo, aplica ambos archivos en ese orden usando `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f ...`.
 
 ```bash
 cd ~/proyectos/GestorDeTarea_Backend
@@ -20,7 +20,7 @@ cp .env.example .env  # edita secretos localmente; nunca los subas
 uvicorn app.main:app --reload
 ```
 
-No hay clave universal ni alta pública. Después de preparar una cuenta local, puedes poblarla opcionalmente con datos sintéticos para revisar el tablero sin IA: `python -m app.seed_demo_data tu-correo@ejemplo.com`. El curso y sus cuatro actividades llevan prefijo `DEMO`; no vienen de PDFs ni de una respuesta simulada del proveedor, y volver a ejecutar el comando no duplica el curso. No hay clave universal ni alta pública. Para preparar una cuenta local, usa `python -m app.create_user correo@ejemplo.com`; se solicita la contraseña de forma interactiva. PDFs: solo PDF con texto, máximo 15 MB por defecto; PDFs escaneados requieren OCR, fuera de esta versión. El análisis real usa OpenAI cuando se configura `OPENAI_API_KEY`; sin clave devuelve error explicativo y no crea extracción de prueba.
+Después de crear una cuenta mediante la opción «Crear una cuenta» de la pantalla de inicio, puedes poblarla opcionalmente con datos sintéticos para revisar el tablero sin IA: `python -m app.seed_demo_data tu-correo@ejemplo.com`. El curso y sus cuatro actividades llevan prefijo `DEMO`; no vienen de PDFs ni de una respuesta simulada del proveedor, y volver a ejecutar el comando no duplica el curso. Para crear cuentas de desarrollo desde la terminal, también puedes usar `python -m app.create_user correo@ejemplo.com`; se solicita la contraseña de forma interactiva. PDFs: solo PDF con texto, máximo 15 MB por defecto; PDFs escaneados requieren OCR, fuera de esta versión. El análisis real usa OpenAI cuando se configura `OPENAI_API_KEY`; sin clave devuelve error explicativo y no crea extracción de prueba.
 
 ## Privacidad
 
@@ -54,4 +54,16 @@ Este paso es opcional y separado de la migración de esquema. Mantengan `DATABAS
 
 ## Pruebas de integración
 
-Con PostgreSQL de desarrollo activo y `.env` apuntando a una base vacía con la migración aplicada, ejecuta `pytest`. Las pruebas crean datos temporales con correo `.invalid` y los eliminan al finalizar. Comprueban login, aislamiento por usuario, filtros inclusivos, orden de próximas tareas, estado completado persistente e idempotencia de confirmación; no llaman al proveedor de IA.
+Con PostgreSQL de desarrollo activo y `.env` apuntando a una base vacía con la migración aplicada, ejecuta `pytest`. Las pruebas crean datos temporales con correo `.invalid` y los eliminan al finalizar. Comprueban registro, hash seguro, requisitos de contraseña, login, bloqueo temporal tras tres fallos, aislamiento por usuario, filtros inclusivos, orden de próximas tareas, estado completado persistente e idempotencia de confirmación; no llaman al proveedor de IA.
+
+### Registro y acceso
+
+La pantalla permite crear una cuenta. El backend normaliza el correo, exige contraseña de 15 a 128 caracteres, bloquea contraseñas comunes seleccionadas, compara la confirmación y almacena únicamente un hash Argon2id. La interfaz muestra los requisitos y coincidencia en vivo; toda validación se repite en el servidor. Se permiten espacios internos, Unicode, pegar y usar gestores de contraseñas. No se exige una mezcla fija de mayúsculas, dígitos o símbolos.
+
+Tras tres contraseñas incorrectas, el inicio de sesión queda bloqueado durante 15 minutos. El bloqueo es temporal y se restablece tras un acceso correcto. El umbral y la duración son decisiones del producto; este bloqueo por cuenta puede permitir que terceros provoquen una espera temporal si conocen un correo.
+
+En bases existentes, aplica la migración `sql/migrations/002_auth_lockout.sql` antes de iniciar la versión nueva:
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f sql/migrations/002_auth_lockout.sql
+```

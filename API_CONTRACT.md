@@ -1,7 +1,8 @@
 # Contrato HTTP v1
-Base local: `http://localhost:8000/api`. JSON UTF-8; fechas `YYYY-MM-DD`; UUID en campos `id`. Error estándar FastAPI `{ "detail": "..." }`. Bearer JWT en todos los endpoints salvo login.
+Base local: `http://localhost:8000/api`. JSON UTF-8; fechas `YYYY-MM-DD`; UUID en campos `id`. Error estándar FastAPI `{ "detail": "..." }`. Bearer JWT para endpoints privados; registro y login son públicos.
 
-- `POST /auth/login` JSON `{email,password}` → `{access_token,token_type}`. Rechazo 401. No existe registro público.
+- `POST /auth/register` JSON `{email,password,password_confirmation}` → `{message}` (201). El correo se normaliza a minúsculas; la contraseña debe tener 15–128 caracteres y no estar en la lista local de contraseñas comunes; la confirmación debe coincidir. Correo ocupado: 409.
+- `POST /auth/login` JSON `{email,password}` → `{access_token,token_type}`. Credenciales incorrectas: 401 con intentos restantes; después de tres fallos: 429 y bloqueo temporal de 15 minutos.
 - `GET /courses` → `[{id,name,code,term}]`; `POST /courses` JSON `{name,code?,term?}` → curso (201).
 - `POST /documents/analyze` multipart `course_id`, `file` (PDF hasta 15 MB) → `{document_id,proposals:[{title,description,due_date,review_required}]}`. Una fecha dudosa es `null` y se marca para revisión. Requiere clave de IA real; 422 para PDF sin texto, 503 si falta proveedor.
 - `POST /activities/confirm` JSON `{document_id,activities:[{title,description,due_date,review_required}]}` → actividades creadas; repetir la confirmación del mismo documento devuelve las actividades ya creadas sin duplicarlas. Solo este endpoint persiste propuestas.
