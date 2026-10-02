@@ -112,3 +112,61 @@ def test_confirming_same_document_twice_does_not_duplicate(accounts):
     with SessionLocal() as db:
         count = len(list(db.scalars(select(Activity).where(Activity.document_id == document_id))))
     assert count == 1
+
+
+def _searchable_pdf(text: str) -> bytes:
+    """Build a tiny PDF fixture without storing a real course document."""
+    stream = f"BT /F1 18 Tf 72 720 Td ({text}) Tj ET".encode("ascii")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
+    ]
+    result = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for number, obj in enumerate(objects, start=1):
+        offsets.append(len(result))
+        result.extend(f"{number} 0 obj\n".encode("ascii"))
+        result.extend(obj)
+        result.extend(b"\nendobj\n")
+    xref = len(result)
+    result.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode("ascii"))
+    for offset in offsets[1:]:
+        result.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    result.extend(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("ascii"))
+    return bytes(result)
+
+
+def test_pdf_without_ai_key_returns_clear_error_and_no_fake_proposals(accounts, monkeypatch):
+    owner, course, _, _ = accounts
+    monkeypatch.setattr("app.main.settings.openai_api_key", "")
+    response = client.post(
+        "/api/documents/analyze",
+        headers=auth(owner),
+        data={"course_id": str(course.id)},
+        files={"file": ("programa-sintetico.pdf", _searchable_pdf("Actividad y fecha 20 de noviembre"), "application/pdf")},
+    )
+    assert response.status_code == 503
+    assert "OPENAI_API_KEY" in response.json()["detail"]
+    assert "propuestas" in response.json()["detail"]
+
+
+def test_pdf_upload_rejects_non_pdf_and_unreadable_content(accounts):
+    owner, course, _, _ = accounts
+    headers = auth(owner)
+    wrong_type = client.post(
+        "/api/documents/analyze",
+        headers=headers,
+        data={"course_id": str(course.id)},
+        files={"file": ("nota.txt", b"texto plano", "text/plain")},
+    )
+    assert wrong_type.status_code == 415
+    unreadable = client.post(
+        "/api/documents/analyze",
+        headers=headers,
+        data={"course_id": str(course.id)},
+        files={"file": ("nota.pdf", b"contenido que no es un PDF", "application/pdf")},
+    )
+    assert unreadable.status_code == 422
