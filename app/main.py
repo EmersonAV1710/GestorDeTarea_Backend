@@ -26,21 +26,21 @@ def health(): return {"status":"ok"}
 def register(body:RegisterIn,db:Session=Depends(get_db)):
     if body.password != body.password_confirmation:
         raise HTTPException(422,"Las contraseñas no coinciden")
-    if db.scalar(select(User).where(User.email==body.email)):
-        raise HTTPException(409,"No se pudo crear la cuenta con esos datos. Verifica el correo o inicia sesión.")
-    user=User(email=body.email,password_hash=hash_password(body.password))
+    if db.scalar(select(User).where((User.email==body.email)|(User.username==body.username))):
+        raise HTTPException(409,"El correo o el nombre de usuario ya están registrados.")
+    user=User(email=body.email,username=body.username,password_hash=hash_password(body.password))
     db.add(user)
     try: db.commit()
     except Exception:
         db.rollback()
-        raise HTTPException(409,"No se pudo crear la cuenta con esos datos. Verifica el correo o inicia sesión.")
-    return {"message":"Cuenta creada. Ya puedes iniciar sesión."}
+        raise HTTPException(409,"El correo o el nombre de usuario ya están registrados.")
+    return {"message":"Cuenta creada. Ya puedes iniciar sesión.","username":user.username}
 @app.post("/api/auth/login")
 def login(body:Login,db:Session=Depends(get_db)):
-    u=db.scalar(select(User).where(User.email==body.email))
+    u=db.scalar(select(User).where(User.username==body.username))
     now=datetime.now(timezone.utc)
     if not u:
-        raise HTTPException(401,"Correo o contraseña incorrectos.")
+        raise HTTPException(401,"Usuario o contraseña incorrectos.")
     if u.locked_until and u.locked_until > now:
         remaining=max(1,int((u.locked_until-now).total_seconds()//60)+1)
         raise HTTPException(429,f"Se agotaron los 3 intentos. Prueba de nuevo en {remaining} minuto(s).")
@@ -53,11 +53,11 @@ def login(body:Login,db:Session=Depends(get_db)):
             raise HTTPException(429,"Se agotaron los 3 intentos. La cuenta se bloqueó temporalmente por 15 minutos.")
         remaining=3-u.failed_login_attempts
         db.commit()
-        raise HTTPException(401,f"Correo o contraseña incorrectos. Te quedan {remaining} intento(s).")
+        raise HTTPException(401,f"Usuario o contraseña incorrectos. Te quedan {remaining} intento(s).")
     u.failed_login_attempts=0
     u.locked_until=None
     db.commit()
-    return {"access_token":token_for(str(u.id)),"token_type":"bearer"}
+    return {"access_token":token_for(str(u.id)),"token_type":"bearer","username":u.username}
 @app.get("/api/courses")
 def courses(user:User=Depends(current_user),db:Session=Depends(get_db)): return [course_dict(c) for c in db.scalars(select(Course).where(Course.user_id==user.id).order_by(Course.name))]
 @app.post("/api/courses",status_code=201)

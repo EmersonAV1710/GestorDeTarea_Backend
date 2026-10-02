@@ -19,8 +19,8 @@ def accounts():
     """Create disposable users/courses and remove them after each integration test."""
     suffix = uuid4().hex
     with SessionLocal() as db:
-        owner = User(email=f"pytest-{suffix}@example.invalid", password_hash=hash_password(TEST_PASSWORD))
-        other = User(email=f"pytest-other-{suffix}@example.invalid", password_hash=hash_password(TEST_PASSWORD))
+        owner = User(email=f"pytest-{suffix}@example.invalid", username=f"pytest_{suffix[:12]}", password_hash=hash_password(TEST_PASSWORD))
+        other = User(email=f"pytest-other-{suffix}@example.invalid", username=f"other_{suffix[:12]}", password_hash=hash_password(TEST_PASSWORD))
         db.add_all([owner, other])
         db.flush()
         course = Course(user_id=owner.id, name=f"Curso {suffix}")
@@ -40,14 +40,14 @@ def accounts():
 
 
 def auth(user: User) -> dict[str, str]:
-    response = client.post("/api/auth/login", json={"email": user.email, "password": TEST_PASSWORD})
+    response = client.post("/api/auth/login", json={"username": user.username, "password": TEST_PASSWORD})
     assert response.status_code == 200
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
 def test_login_rejects_bad_password_and_private_routes_require_auth(accounts):
     owner, _, _, _ = accounts
-    assert client.post("/api/auth/login", json={"email": owner.email, "password": "incorrecta"}).status_code == 401
+    assert client.post("/api/auth/login", json={"username": owner.username, "password": "incorrecta"}).status_code == 401
     assert client.get("/api/courses").status_code == 401
     assert client.get("/api/courses", headers=auth(owner)).status_code == 200
 
@@ -174,18 +174,21 @@ def test_pdf_upload_rejects_non_pdf_and_unreadable_content(accounts):
 
 def test_registration_validates_password_and_creates_argon2_account():
     email = f"register-{uuid4().hex}@example.invalid"
+    username = f"register_{uuid4().hex[:12]}"
     minimum_password = "Clave8ok"
-    weak = client.post("/api/auth/register", json={"email": email, "password": "corta12", "password_confirmation": "corta12"})
+    weak = client.post("/api/auth/register", json={"email": email, "username":username,"password": "corta12", "password_confirmation": "corta12"})
     assert weak.status_code == 422
-    mismatch = client.post("/api/auth/register", json={"email": email, "password": minimum_password, "password_confirmation": "OtraClaveTemporal-2026!"})
+    invalid_username = client.post("/api/auth/register", json={"email": email, "username":"usuario con espacios","password": minimum_password, "password_confirmation": minimum_password})
+    assert invalid_username.status_code == 422
+    mismatch = client.post("/api/auth/register", json={"email": email, "username":username,"password": minimum_password, "password_confirmation": "OtraClaveTemporal-2026!"})
     assert mismatch.status_code == 422
-    created = client.post("/api/auth/register", json={"email": email.upper(), "password": minimum_password, "password_confirmation": minimum_password})
+    created = client.post("/api/auth/register", json={"email": email.upper(), "username":username.upper(),"password": minimum_password, "password_confirmation": minimum_password})
     assert created.status_code == 201
-    duplicate = client.post("/api/auth/register", json={"email": email, "password": minimum_password, "password_confirmation": minimum_password})
+    duplicate = client.post("/api/auth/register", json={"email": email, "username":username,"password": minimum_password, "password_confirmation": minimum_password})
     assert duplicate.status_code == 409
     with SessionLocal() as db:
         user = db.scalar(select(User).where(User.email == email))
-        assert user is not None and user.password_hash != TEST_PASSWORD
+        assert user is not None and user.username == username and user.password_hash != minimum_password
         db.delete(user)
         db.commit()
 
@@ -193,20 +196,20 @@ def test_registration_validates_password_and_creates_argon2_account():
 def test_login_locks_after_three_failures_and_success_resets_counter(accounts):
     owner, _, _, _ = accounts
     for remaining in (2, 1):
-        response = client.post("/api/auth/login", json={"email": owner.email, "password": "contraseña incorrecta"})
+        response = client.post("/api/auth/login", json={"username": owner.username, "password": "contraseña incorrecta"})
         assert response.status_code == 401
         assert f"{remaining} intento(s)" in response.json()["detail"]
-    locked = client.post("/api/auth/login", json={"email": owner.email, "password": "contraseña incorrecta"})
+    locked = client.post("/api/auth/login", json={"username": owner.username, "password": "contraseña incorrecta"})
     assert locked.status_code == 429
     assert "15 minutos" in locked.json()["detail"]
-    still_locked = client.post("/api/auth/login", json={"email": owner.email, "password": TEST_PASSWORD})
+    still_locked = client.post("/api/auth/login", json={"username": owner.username, "password": TEST_PASSWORD})
     assert still_locked.status_code == 429
     with SessionLocal() as db:
         user = db.get(User, owner.id)
         user.locked_until = None
         user.failed_login_attempts = 2
         db.commit()
-    good = client.post("/api/auth/login", json={"email": owner.email, "password": TEST_PASSWORD})
+    good = client.post("/api/auth/login", json={"username": owner.username, "password": TEST_PASSWORD})
     assert good.status_code == 200
     with SessionLocal() as db:
         user = db.get(User, owner.id)

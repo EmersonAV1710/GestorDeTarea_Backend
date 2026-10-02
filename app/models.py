@@ -8,6 +8,7 @@ class User(Base):
     __tablename__="users"
     id: Mapped[uuid.UUID]=mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
     email: Mapped[str]=mapped_column(String,unique=True,index=True)
+    username: Mapped[str]=mapped_column(String(30),unique=True,index=True)
     password_hash: Mapped[str]=mapped_column(String)
     failed_login_attempts: Mapped[int]=mapped_column(default=0, server_default="0", nullable=False)
     locked_until: Mapped[datetime|None]=mapped_column(DateTime(timezone=True), nullable=True)
