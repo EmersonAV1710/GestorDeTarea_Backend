@@ -20,7 +20,7 @@ cp .env.example .env  # edita secretos localmente; nunca los subas
 uvicorn app.main:app --reload
 ```
 
-No hay clave universal ni alta pública. Para preparar una cuenta local, usa `python -m app.create_user correo@ejemplo.com`; se solicita la contraseña de forma interactiva. PDFs: solo PDF con texto, máximo 15 MB por defecto; PDFs escaneados requieren OCR, fuera de esta versión. El análisis real usa OpenAI cuando se configura `OPENAI_API_KEY`; sin clave devuelve error explicativo y no crea extracción de prueba.
+No hay clave universal ni alta pública. Después de preparar una cuenta local, puedes poblarla opcionalmente con datos sintéticos para revisar el tablero sin IA: `python -m app.seed_demo_data tu-correo@ejemplo.com`. El curso y sus cuatro actividades llevan prefijo `DEMO`; no vienen de PDFs ni de una respuesta simulada del proveedor, y volver a ejecutar el comando no duplica el curso. No hay clave universal ni alta pública. Para preparar una cuenta local, usa `python -m app.create_user correo@ejemplo.com`; se solicita la contraseña de forma interactiva. PDFs: solo PDF con texto, máximo 15 MB por defecto; PDFs escaneados requieren OCR, fuera de esta versión. El análisis real usa OpenAI cuando se configura `OPENAI_API_KEY`; sin clave devuelve error explicativo y no crea extracción de prueba.
 
 ## Privacidad
 
