@@ -10,3 +10,26 @@ Base local: `http://localhost:8000/api`. JSON UTF-8; fechas `YYYY-MM-DD`; UUID e
 - `PATCH /activities/{id}/complete` → actividad actualizada.
 
 El servidor comprueba propietario en cada recurso. El frontend consume exclusivamente esta API; CORS se configura con `CORS_ORIGINS`.
+
+## Validación de análisis y confirmación
+
+El análisis devuelve también `source_excerpt` en cada propuesta: un fragmento del
+texto extraído del PDF, comprobado por el servidor y mostrado durante la revisión.
+Este campo no se persiste como parte de la actividad. La confirmación envía solo
+`title`, `description`, `due_date` y `review_required`.
+
+Se requieren títulos de 1–240 caracteres después de quitar espacios exteriores,
+descripciones de hasta 5000 caracteres (se admite `""`, no `null`), fechas de
+calendario `YYYY-MM-DD` o `null`, y booleanos reales. Una actividad sin fecha se
+marca siempre para revisión. La confirmación admite de 1 a 200 actividades.
+
+PDFs cuyo texto extraído supera 50 000 caracteres se rechazan con 422 antes de
+llamar al proveedor; no se analiza un fragmento silenciosamente. Dividirlos permite
+analizar su contenido completo. Un análisis sin actividades devuelve 200 con
+`proposals: []`. Respuestas inválidas, rechazadas o incompletas del proveedor
+devuelven 502; un timeout devuelve 504. No se guarda el documento ni actividades
+si la extracción falla. Las propuestas siguen guardándose solo al confirmar.
+
+La confirmación bloquea la fila del documento durante la transacción para que dos
+confirmaciones simultáneas del mismo documento no creen dos lotes. Volver a subir
+el PDF crea otro documento; no se deduplican cargas distintas.

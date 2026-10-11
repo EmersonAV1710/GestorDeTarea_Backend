@@ -2,6 +2,7 @@ from datetime import date,datetime,timedelta,timezone
 from uuid import UUID
 from fastapi import FastAPI,Depends,HTTPException,UploadFile,File,Form,Header
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .config import settings
@@ -9,6 +10,7 @@ from .db import Base,engine,get_db
 from .models import User,Course,Document,Activity
 from .schemas import Login,RegisterIn,CourseIn,CourseOut,ConfirmIn
 from .security import verify_password,hash_password,token_for,user_id
+from .ai import extract_activities, AnalysisError
 app=FastAPI(title="Gestor de tareas API",version="1.0.0")
 app.add_middleware(CORSMiddleware,allow_origins=[x.strip() for x in settings.cors_origins.split(",") if x.strip()],allow_credentials=True,allow_methods=["*"] ,allow_headers=["*"])
 def current_user(authorization:str|None=Header(default=None),db:Session=Depends(get_db)):
@@ -78,19 +80,15 @@ async def analyze(course_id:UUID=Form(...),file:UploadFile=File(...),user:User=D
     try: text="\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(raw)).pages)
     except Exception: raise HTTPException(422,"No se pudo leer el PDF")
     if not text.strip(): raise HTTPException(422,"El PDF no contiene texto seleccionable; OCR no está habilitado")
-    if not settings.openai_api_key: raise HTTPException(503,"Configura OPENAI_API_KEY en el backend para analizar documentos. No se generaron propuestas.")
-    from openai import OpenAI
-    prompt="Extrae actividades académicas explícitas. Devuelve JSON {activities:[{title,description,due_date (YYYY-MM-DD o null),review_required (boolean)}]}. No inventes fechas; si hay ambigüedad usa null y review_required=true. Texto:\n"+text[:50000]
     try:
-        result=OpenAI(api_key=settings.openai_api_key).chat.completions.create(model=settings.openai_model,response_format={"type":"json_object"},messages=[{"role":"system","content":"Eres un extractor conservador de tareas. Responde solo JSON."},{"role":"user","content":prompt}])
-        import json
-        proposals=json.loads(result.choices[0].message.content or "{}").get("activities",[])
-    except Exception as e: raise HTTPException(502,"Falló el análisis con el proveedor de IA; verifica configuración e inténtalo de nuevo") from e
+        proposals = await run_in_threadpool(extract_activities, text, settings.openai_api_key, settings.openai_model)
+    except AnalysisError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
     d=Document(user_id=user.id,course_id=course.id,filename=(file.filename or "documento.pdf")[:240],status="analyzed");db.add(d);db.flush();db.commit()
     return {"document_id":d.id,"proposals":proposals}
 @app.post("/api/activities/confirm")
 def confirm(body:ConfirmIn,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    doc=db.scalar(select(Document).where(Document.id==body.document_id,Document.user_id==user.id))
+    doc=db.scalar(select(Document).where(Document.id==body.document_id,Document.user_id==user.id).with_for_update())
     if not doc: raise HTTPException(404,"Documento no encontrado")
     existing=list(db.scalars(select(Activity).where(Activity.document_id==doc.id,Activity.user_id==user.id)))
     if existing: return [activity_dict(a) for a in existing]

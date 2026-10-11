@@ -1,7 +1,7 @@
 from datetime import date
 from uuid import UUID
 import re
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 COMMON_PASSWORDS={"passwordpassword", "contrasenasegura", "123456789012345", "qwertyuiopasdfg", "administrador123"}
 def normalize_email(value:str)->str:
@@ -47,6 +47,34 @@ class RegisterIn(BaseModel):
         return value
 class CourseIn(BaseModel): name:str=Field(min_length=1,max_length=160); code:str|None=None; term:str|None=None
 class CourseOut(CourseIn): id:UUID
-class Proposal(BaseModel): title:str=Field(min_length=1,max_length=240); description:str=""; due_date:date|None=None; review_required:bool=False
+class Proposal(BaseModel):
+    title: str = Field(min_length=1, max_length=240, strict=True)
+    description: str = Field(default="", max_length=5000, strict=True)
+    due_date: date | None = None
+    review_required: bool = Field(default=False, strict=True)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def trim_title(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("due_date", mode="before")
+    @classmethod
+    def calendar_date(cls, value):
+        if value is not None and not (
+            type(value) is date or
+            isinstance(value, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value)
+        ):
+            raise ValueError("La fecha debe usar YYYY-MM-DD o quedar sin fecha")
+        return value
+
+    @model_validator(mode="after")
+    def missing_date_needs_review(self):
+        if self.due_date is None:
+            self.review_required = True
+        return self
+
 class ActivityOut(Proposal): id:UUID; course_id:UUID; document_id:UUID|None; status:str
-class ConfirmIn(BaseModel): document_id:UUID; activities:list[Proposal]
+class ConfirmIn(BaseModel):
+    document_id: UUID
+    activities: list[Proposal] = Field(min_length=1, max_length=200)

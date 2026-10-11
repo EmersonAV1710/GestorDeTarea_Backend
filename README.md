@@ -1,5 +1,12 @@
 # Gestor de tareas académicas — API
 
+Pruebas de extracción y validación sin PostgreSQL ni llamadas pagadas:
+`python -m pytest tests/test_ai.py tests/test_analysis_api.py -q`.
+Instala antes `requirements-dev.txt`. Las pruebas existentes de `test_api.py`
+siguen necesitando PostgreSQL y sus migraciones. El análisis usa salidas
+estructuradas; el modelo configurado debe admitir JSON Schema. Los límites y
+errores están descritos en `API_CONTRACT.md`.
+
 FastAPI es la decisión de implementación para exponer la lógica Python como servicio independiente. PostgreSQL persiste cuentas, cursos, documentos y actividades. Durante el desarrollo se usa PostgreSQL local en Ubuntu; cuando el equipo tenga cuenta, la misma base podrá alojarse en Supabase cambiando únicamente `DATABASE_URL`. FastAPI conserva autenticación, autorización y lógica de negocio: no se usa Supabase Auth, SDK ni API de base de datos. El SQL de `sql/` usa PostgreSQL estándar para que las migraciones puedan aplicarse también al PostgreSQL de Supabase. Contrato compartido: `API_CONTRACT.md`; OpenAPI estará en `/docs`.
 
 ## Requisitos y arranque (Ubuntu)
