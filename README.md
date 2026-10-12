@@ -17,7 +17,7 @@ Instala Python 3.11+, pip y PostgreSQL. En Ubuntu, crea rol y base interactivos 
 sudo -u postgres psql
 ```
 
-Dentro de `psql`: `CREATE ROLE gestor LOGIN;`, luego `\password gestor`, `CREATE DATABASE gestor_tareas OWNER gestor;` y `\q`. Copia `.env.example` a `.env`, configura `DATABASE_URL` con la contraseña local y un `JWT_SECRET` aleatorio largo, y aplica los archivos SQL en orden: `sql/001_init.sql`, `sql/migrations/002_auth_lockout.sql` y `sql/migrations/003_usernames.sql`. La aplicación **no** ejecuta migraciones automáticamente. Usa `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f RUTA_DEL_ARCHIVO` para cada archivo.
+Dentro de `psql`: `CREATE ROLE gestor LOGIN;`, luego `\password gestor`, `CREATE DATABASE gestor_tareas OWNER gestor;` y `\q`. Copia `.env.example` a `.env`, configura `DATABASE_URL` con la contraseña local y un `JWT_SECRET` aleatorio largo, y aplica los archivos SQL en orden: `sql/001_init.sql`, `sql/migrations/002_auth_lockout.sql`, `sql/migrations/003_usernames.sql` y `sql/migrations/004_course_status.sql` y `sql/migrations/005_activity_types.sql`. La aplicación **no** ejecuta migraciones automáticamente. Usa `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f RUTA_DEL_ARCHIVO` para cada archivo.
 
 ```bash
 cd ~/proyectos/GestorDeTarea_Backend
@@ -27,11 +27,11 @@ cp .env.example .env  # edita secretos localmente; nunca los subas
 uvicorn app.main:app --reload
 ```
 
-Después de crear una cuenta mediante la opción «Crear una cuenta» de la pantalla de inicio, puedes poblarla opcionalmente con datos sintéticos para revisar el tablero sin IA: `python -m app.seed_demo_data tu-correo@ejemplo.com`. El curso y sus cuatro actividades llevan prefijo `DEMO`; no vienen de PDFs ni de una respuesta simulada del proveedor, y volver a ejecutar el comando no duplica el curso. Para crear cuentas de desarrollo desde la terminal, también puedes usar `python -m app.create_user usuario correo@ejemplo.com`; se solicita la contraseña de forma interactiva. PDFs: solo PDF con texto, máximo 15 MB por defecto; PDFs escaneados requieren OCR, fuera de esta versión. El análisis real usa OpenAI cuando se configura `OPENAI_API_KEY`; sin clave devuelve error explicativo y no crea extracción de prueba.
+Después de crear una cuenta mediante la opción «Crear una cuenta» de la pantalla de inicio, puedes poblarla opcionalmente con datos sintéticos para revisar el tablero sin IA: `python -m app.seed_demo_data tu-correo@ejemplo.com`. El curso y sus cuatro actividades llevan prefijo `DEMO`; no vienen de documentos reales ni de una respuesta simulada del proveedor, y volver a ejecutar el comando no duplica el curso. Para crear cuentas de desarrollo desde la terminal, también puedes usar `python -m app.create_user usuario correo@ejemplo.com`; se solicita la contraseña de forma interactiva. El análisis acepta PDF con texto, Word `.docx` y TXT, máximo 15 MB por archivo; PDFs escaneados requieren OCR y Word `.doc` debe guardarse como `.docx`. El análisis real usa Gemini cuando se configura `GEMINI_API_KEY` en el `.env` del backend; `GEMINI_MODEL` permite elegir el modelo y usa `gemini-3.5-flash-lite` por defecto. La conexión utiliza el endpoint compatible de Google con la librería existente (`openai`), y la clave permanece en el backend. Reinicia el backend después de cambiar el `.env`; sin clave devuelve error explicativo y no crea extracción de prueba.
 
 ## Privacidad
 
-Todas las consultas y mutaciones están acotadas al usuario autenticado. No se guardan archivos PDF; solo metadatos y propuestas confirmadas. No incluyas documentos reales, `.env`, claves ni contraseñas en Git.
+Todas las consultas y mutaciones están acotadas al usuario autenticado. No se guardan los archivos subidos; solo metadatos y propuestas confirmadas. No incluyas documentos reales, `.env`, claves ni contraseñas en Git.
 
 ## Clúster local de desarrollo de esta máquina
 

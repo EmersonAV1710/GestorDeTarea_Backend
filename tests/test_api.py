@@ -67,6 +67,61 @@ def test_courses_and_documents_are_scoped_to_owner(accounts):
     assert response.status_code == 404
 
 
+def test_course_edit_deactivation_and_reactivation_preserve_history(accounts):
+    owner, course, _, other_course = accounts
+    headers = auth(owner)
+    with SessionLocal() as db:
+        activity = Activity(user_id=owner.id, course_id=course.id, title="Entrega conservada")
+        document = Document(user_id=owner.id, course_id=course.id, filename="programa.pdf", status="analyzed")
+        db.add_all([activity, document])
+        db.commit()
+        activity_id, document_id = activity.id, document.id
+
+    assert client.patch(f"/api/courses/{other_course.id}", headers=headers, json={"name": "Ajeno"}).status_code == 404
+    assert client.delete(f"/api/courses/{other_course.id}", headers=headers).status_code == 404
+    assert client.patch(f"/api/courses/{other_course.id}/activate", headers=headers).status_code == 404
+
+    renamed = client.patch(
+        f"/api/courses/{course.id}", headers=headers,
+        json={"name": "  Matemática avanzada  ", "code": " MAT-2 ", "term": " 2026-II "},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "Matemática avanzada"
+    assert renamed.json()["code"] == "MAT-2"
+    assert renamed.json()["term"] == "2026-II"
+    assert renamed.json()["is_active"] is True
+
+    inactive = client.delete(f"/api/courses/{course.id}", headers=headers)
+    assert inactive.status_code == 200 and inactive.json()["is_active"] is False
+    listed = client.get("/api/courses", headers=headers).json()
+    assert listed[0]["id"] == str(course.id) and listed[0]["is_active"] is False
+    with SessionLocal() as db:
+        assert db.get(Activity, activity_id) is not None
+        assert db.get(Document, document_id) is not None
+
+    upload = client.post(
+        "/api/documents/analyze", headers=headers, data={"course_id": str(course.id)},
+        files={"file": ("programa.pdf", b"%PDF-1.4", "application/pdf")},
+    )
+    assert upload.status_code == 409
+    assert "inactivo" in upload.json()["detail"]
+    active = client.patch(f"/api/courses/{course.id}/activate", headers=headers)
+    assert active.status_code == 200 and active.json()["is_active"] is True
+
+
+def test_course_name_validation_and_duplicate_edit(accounts):
+    owner, course, _, _ = accounts
+    headers = auth(owner)
+    another = client.post("/api/courses", headers=headers, json={"name": "Otro curso"})
+    assert another.status_code == 201
+    assert client.post("/api/courses", headers=headers, json={"name": "   "}).status_code == 422
+    assert client.patch(f"/api/courses/{course.id}", headers=headers, json={"name": "   "}).status_code == 422
+    duplicate = client.patch(f"/api/courses/{course.id}", headers=headers, json={"name": "Otro curso"})
+    assert duplicate.status_code == 409
+    with SessionLocal() as db:
+        assert db.get(Course, course.id).name == course.name
+
+
 def test_date_filters_upcoming_order_and_completion_persist(accounts):
     owner, course, _, _ = accounts
     headers = auth(owner)
@@ -141,7 +196,7 @@ def _searchable_pdf(text: str) -> bytes:
 
 def test_pdf_without_ai_key_returns_clear_error_and_no_fake_proposals(accounts, monkeypatch):
     owner, course, _, _ = accounts
-    monkeypatch.setattr("app.main.settings.openai_api_key", "")
+    monkeypatch.setattr("app.main.settings.gemini_api_key", "")
     response = client.post(
         "/api/documents/analyze",
         headers=auth(owner),
@@ -149,18 +204,18 @@ def test_pdf_without_ai_key_returns_clear_error_and_no_fake_proposals(accounts, 
         files={"file": ("programa-sintetico.pdf", _searchable_pdf("Actividad y fecha 20 de noviembre"), "application/pdf")},
     )
     assert response.status_code == 503
-    assert "OPENAI_API_KEY" in response.json()["detail"]
+    assert "GEMINI_API_KEY" in response.json()["detail"]
     assert "propuestas" in response.json()["detail"]
 
 
-def test_pdf_upload_rejects_non_pdf_and_unreadable_content(accounts):
+def test_upload_rejects_unsupported_and_unreadable_content(accounts):
     owner, course, _, _ = accounts
     headers = auth(owner)
     wrong_type = client.post(
         "/api/documents/analyze",
         headers=headers,
         data={"course_id": str(course.id)},
-        files={"file": ("nota.txt", b"texto plano", "text/plain")},
+        files={"file": ("imagen.png", b"imagen", "image/png")},
     )
     assert wrong_type.status_code == 415
     unreadable = client.post(

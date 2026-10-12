@@ -1,0 +1,1 @@
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS activity_type VARCHAR(20) NOT NULL DEFAULT 'otro';

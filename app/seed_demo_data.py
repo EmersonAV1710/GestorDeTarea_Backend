@@ -21,7 +21,7 @@ def main() -> None:
             raise SystemExit("No existe esa cuenta. Créala primero con `python -m app.create_user correo`.")
         course = db.scalar(select(Course).where(Course.user_id == user.id, Course.name == DEMO_COURSE))
         if course is not None:
-            print("Los datos DEMO ya existen para esta cuenta; no se duplicaron.")
+            print("Los datos DEMO ya existen para esta cuenta. No se duplicaron.")
             return
 
         course = Course(user_id=user.id, name=DEMO_COURSE, code="DEMO-01", term="Datos sintéticos")
@@ -30,7 +30,7 @@ def main() -> None:
         today = date.today()
         db.add_all([
             Activity(user_id=user.id, course_id=course.id, title="DEMO · Entrega próxima", description="Actividad sintética para probar el orden del tablero.", due_date=today + timedelta(days=2)),
-            Activity(user_id=user.id, course_id=course.id, title="DEMO · Quiz de muestra", description="Dato ficticio; no proviene de un documento académico.", due_date=today + timedelta(days=6)),
+            Activity(user_id=user.id, course_id=course.id, title="DEMO · Quiz de muestra", description="Dato ficticio. No proviene de un documento académico.", due_date=today + timedelta(days=6)),
             Activity(user_id=user.id, course_id=course.id, title="DEMO · Actividad completada", description="Registro sintético para revisar el estado completado.", due_date=today - timedelta(days=2), status="completed", completed_at=datetime.now(timezone.utc)),
             Activity(user_id=user.id, course_id=course.id, title="DEMO · Fecha por revisar", description="La fecha se deja vacía para mostrar actividades sin fecha confirmada.", due_date=None, review_required=True),
         ])

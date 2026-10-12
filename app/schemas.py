@@ -1,9 +1,10 @@
 from datetime import date
 from uuid import UUID
+from typing import Literal
 import re
-from pydantic import BaseModel, Field, field_validator, model_validator
+import unicodedata
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-COMMON_PASSWORDS={"passwordpassword", "contrasenasegura", "123456789012345", "qwertyuiopasdfg", "administrador123"}
 def normalize_email(value:str)->str:
     email=value.strip().lower()
     if len(email)>254 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
@@ -16,13 +17,15 @@ def normalize_username(value:str)->str:
     return username
 def validate_password(value:str)->str:
     if len(value)<8: raise ValueError("La contraseña debe tener al menos 8 caracteres")
-    if len(value)>128: raise ValueError("La contraseña no puede superar 128 caracteres")
+    if not any(unicodedata.category(character) == "Lu" for character in value):
+        raise ValueError("La contraseña debe tener al menos una mayúscula")
+    if not any(character.isdecimal() for character in value):
+        raise ValueError("La contraseña debe tener al menos un número")
     if value.strip()!=value: raise ValueError("La contraseña no puede iniciar ni terminar con espacios")
-    if value.casefold() in COMMON_PASSWORDS: raise ValueError("Elige una contraseña menos común")
     return value
 class Login(BaseModel):
     username:str
-    password:str=Field(min_length=1,max_length=128)
+    password:str=Field(min_length=1)
     @field_validator("username")
     @classmethod
     def username_valid(cls,value): return normalize_username(value)
@@ -43,11 +46,35 @@ class RegisterIn(BaseModel):
     @field_validator("password_confirmation")
     @classmethod
     def confirmation_length(cls,value):
-        if not 8<=len(value)<=128: raise ValueError("La confirmación debe tener entre 8 y 128 caracteres")
+        if len(value)<8: raise ValueError("La confirmación debe tener al menos 8 caracteres")
         return value
-class CourseIn(BaseModel): name:str=Field(min_length=1,max_length=160); code:str|None=None; term:str|None=None
-class CourseOut(CourseIn): id:UUID
+class CourseIn(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    code: str | None = Field(default=None, max_length=80)
+    term: str | None = Field(default=None, max_length=80)
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value):
+        name = value.strip()
+        if not name:
+            raise ValueError("El nombre del curso no puede quedar vacío")
+        return name
+
+    @field_validator("code", "term")
+    @classmethod
+    def clean_optional(cls, value):
+        if value is None:
+            return None
+        return value.strip() or None
+
+class CourseOut(CourseIn):
+    id: UUID
+    is_active: bool
+ActivityType = Literal["tarea", "proyecto", "examen", "exposicion", "laboratorio", "lectura", "otro"]
+
 class Proposal(BaseModel):
+    activity_type: ActivityType = "otro"
     title: str = Field(min_length=1, max_length=240, strict=True)
     description: str = Field(default="", max_length=5000, strict=True)
     due_date: date | None = None
@@ -74,7 +101,17 @@ class Proposal(BaseModel):
             self.review_required = True
         return self
 
+class ActivityUpdate(Proposal):
+    model_config = ConfigDict(extra="forbid")
+
 class ActivityOut(Proposal): id:UUID; course_id:UUID; document_id:UUID|None; status:str
+class ConfirmProposal(Proposal):
+    status: Literal["pending", "completed"] = "pending"
+
+class ManualActivityIn(ConfirmProposal):
+    model_config = ConfigDict(extra="forbid")
+    course_id: UUID
+
 class ConfirmIn(BaseModel):
     document_id: UUID
-    activities: list[Proposal] = Field(min_length=1, max_length=200)
+    activities: list[ConfirmProposal] = Field(min_length=1, max_length=200)
