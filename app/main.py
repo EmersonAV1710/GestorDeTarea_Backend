@@ -222,10 +222,10 @@ async def analyze(course_id:UUID=Form(...),file:UploadFile=File(...),user:User=D
     duplicate = duplicate_document(user, content_hash, filename, db)
     if duplicate:
         reject_confirmed_document(duplicate, user, db)
-        if duplicate.draft_proposals and not duplicate.is_confirmed:
-            return document_dict(duplicate)
         if duplicate.course_id != course.id and not duplicate.is_confirmed:
             raise HTTPException(409, "Este documento pertenece a otro curso. Retoma su revisión desde el curso original.")
+        if duplicate.draft_proposals and not duplicate.is_confirmed:
+            return document_dict(duplicate)
     try:
         text = await run_in_threadpool(extract_document_text, raw, file.filename or "", file.content_type)
         proposals = await run_in_threadpool(extract_activities, text, settings.gemini_api_key, settings.gemini_model)
@@ -235,10 +235,10 @@ async def analyze(course_id:UUID=Form(...),file:UploadFile=File(...),user:User=D
     duplicate = duplicate_document(user, content_hash, filename, db)
     if duplicate:
         reject_confirmed_document(duplicate, user, db)
-        if duplicate.draft_proposals and not duplicate.is_confirmed:
-            return document_dict(duplicate)
         if duplicate.course_id != course.id and not duplicate.is_confirmed:
             raise HTTPException(409, "Este documento pertenece a otro curso. Retoma su revisión desde el curso original.")
+        if duplicate.draft_proposals and not duplicate.is_confirmed:
+            return document_dict(duplicate)
     document = duplicate or Document(user_id=user.id, course_id=course.id, filename=filename, status="analyzed")
     document.course_id = course.id
     document.filename = filename
@@ -253,6 +253,8 @@ async def analyze(course_id:UUID=Form(...),file:UploadFile=File(...),user:User=D
         duplicate = duplicate_document(user, content_hash, filename, db)
         if duplicate:
             reject_confirmed_document(duplicate, user, db)
+            if duplicate.course_id != course.id and not duplicate.is_confirmed:
+                raise HTTPException(409, "Este documento pertenece a otro curso. Retoma su revisión desde el curso original.")
             if duplicate.draft_proposals and not duplicate.is_confirmed:
                 return document_dict(duplicate)
         raise

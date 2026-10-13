@@ -24,6 +24,29 @@ def test_docx_extracts_paragraphs_and_table_cells():
     assert extract_document_text(word_file(), "Programa.DOCX", None) == "Entrega final\n20 de noviembre"
 
 
+def test_docx_includes_headers_footers_and_footnotes():
+    output = io.BytesIO()
+    def xml(value):
+        return (f'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                f'<w:p><w:r><w:t>{value}</w:t></w:r></w:p></w:document>')
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("word/header1.xml", xml("Periodo 2026"))
+        archive.writestr("word/document.xml", xml("Entregar informe"))
+        archive.writestr("word/footer1.xml", xml("Fecha 20 de noviembre"))
+        archive.writestr("word/footnotes.xml", xml("Anexo evaluado"))
+    assert extract_document_text(output.getvalue(), "programa.docx", None) == (
+        "Periodo 2026\nEntregar informe\nFecha 20 de noviembre\nAnexo evaluado")
+
+
+def test_docx_rejects_oversized_additional_part():
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", "<document/>")
+        archive.writestr("word/header1.xml", b"x" * (15 * 1024 * 1024))
+    with pytest.raises(AnalysisError, match="demasiado complejo"):
+        extract_document_text(output.getvalue(), "programa.docx", None)
+
+
 def test_txt_decodes_utf8_bom_and_windows_encoding():
     assert extract_document_text(b"\xef\xbb\xbfEntrega ma\xc3\xb1ana", "nota.txt", "text/plain") == "Entrega mañana"
     assert extract_document_text(b"Entrega ma\xf1ana", "nota.txt", "text/plain") == "Entrega mañana"
@@ -66,6 +89,18 @@ def test_pdf_without_extension_is_recognized_by_mime(monkeypatch):
     from types import SimpleNamespace
     monkeypatch.setattr("app.document_text.PdfReader", lambda _: SimpleNamespace(pages=[SimpleNamespace(extract_text=lambda: "Entrega final")]))
     assert extract_document_text(b"fixture", "documento", "application/pdf") == "Entrega final"
+
+
+def test_pdf_stops_when_extracted_text_exceeds_limit(monkeypatch):
+    from types import SimpleNamespace
+    def second_page():
+        raise AssertionError("The next PDF page should not be read")
+    monkeypatch.setattr("app.document_text.PdfReader", lambda _: SimpleNamespace(pages=[
+        SimpleNamespace(extract_text=lambda: "x" * 50_001),
+        SimpleNamespace(extract_text=second_page),
+    ]))
+    with pytest.raises(AnalysisError, match="50 000"):
+        extract_document_text(b"fixture", "large.pdf", "application/pdf")
 
 
 def test_password_protected_pdf_has_an_actionable_error():

@@ -75,6 +75,24 @@ def test_success_returns_evidence_and_only_saves_document_metadata(api):
     db.commit.assert_called_once()
 
 
+def test_pending_document_in_another_course_cannot_be_reused(api):
+    client, db, provider, course_id = api
+    from hashlib import sha256
+    db.scalars.return_value = [SimpleNamespace(
+        id=uuid4(), user_id=uuid4(), course_id=uuid4(), filename="synthetic.pdf",
+        content_hash=sha256(b"synthetic PDF reader fixture").hexdigest(),
+        is_confirmed=False, draft_proposals=[{"title": "Proyecto"}],
+    )]
+    db.scalar.side_effect = [db.scalar.return_value, None]
+
+    response = upload(api)
+
+    assert response.status_code == 409
+    assert "otro curso" in response.json()["detail"]
+    provider.chat.completions.create.assert_not_called()
+    db.add.assert_not_called()
+
+
 def test_one_bad_excerpt_returns_a_reviewable_proposal_instead_of_losing_the_analysis(api):
     _, db, provider, _ = api
     provider.chat.completions.create.return_value.choices[0].message.content = json.dumps({"activities": [
