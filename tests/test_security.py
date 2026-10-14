@@ -31,6 +31,14 @@ def test_private_routes_reject_missing_tokens(api, method, path):
     assert client.request(method, path, json={"name": "Curso", "title": "Entrega"}).status_code == 401
 
 
+def test_document_analysis_rejects_guest_upload_before_processing(api):
+    client, _, _, course, _ = api
+    app.dependency_overrides.pop(current_user)
+    response = client.post("/api/documents/analyze", data={"course_id": str(course.id)},
+                           files={"file": ("sample.txt", b"A private task", "text/plain")})
+    assert response.status_code == 401
+
+
 @pytest.mark.parametrize("kind", ["expired", "forged", "deleted-user"])
 def test_private_routes_reject_invalid_tokens(api, kind):
     client, _, owner, _, _ = api
