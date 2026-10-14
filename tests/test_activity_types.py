@@ -51,6 +51,18 @@ def test_confirmation_preserves_the_type_and_remains_idempotent(api, activity_ty
     assert db.scalar(select(func.count()).select_from(Activity)) == 1
 
 
+def test_confirmation_preserves_unconfirmed_year_separately(api):
+    client, db, _, _, document = api
+    response = client.post("/api/activities/confirm", json={"document_id": str(document.id), "activities": [{
+        "title": "Diagnóstico", "description": "Preparar informe", "due_date": None,
+        "year_unconfirmed": True, "review_required": True,
+    }]})
+    assert response.status_code == 200
+    assert response.json()[0]["year_unconfirmed"] is True
+    assert response.json()[0]["description"] == "Preparar informe"
+    assert db.scalar(select(Activity)).year_unconfirmed is True
+
+
 def test_confirmation_can_save_past_proposals_as_overdue_or_delivered(api):
     client, db, _, _, document = api
     body = {"document_id": str(document.id), "activities": [

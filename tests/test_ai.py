@@ -9,7 +9,7 @@ import pytest
 from openai import APIConnectionError, APITimeoutError, AuthenticationError, PermissionDeniedError, RateLimitError, OpenAI
 from pydantic import ValidationError
 
-from app.ai import AnalysisError, MAX_TEXT_CHARS, extract_activities, parse_proposals
+from app.ai import AnalysisError, MAX_TEXT_CHARS, OUTPUT_SCHEMA, extract_activities, parse_proposals
 from app.schemas import ConfirmIn, Proposal
 
 TEXT = "Proyecto final: entregar el informe el 20 de noviembre de 2026."
@@ -35,12 +35,52 @@ def test_missing_date_is_always_flagged_and_empty_description_is_allowed():
     assert result[0]["description"] == ""
 
 
+def test_uncertain_year_keeps_date_empty_and_exposes_specific_warning():
+    text = "Entrega del proyecto: 20 de noviembre."
+    result = parse_proposals(payload(source_excerpt=text, due_date="2026-11-20",
+                                     year_unconfirmed=True, review_required=False), text)
+    assert result[0]["year_unconfirmed"] is True
+    assert result[0]["due_date"] is None
+    assert result[0]["review_required"] is True
+    fields = OUTPUT_SCHEMA["properties"]["activities"]["items"]
+    assert "year_unconfirmed" in fields["required"]
+
+
+def test_uncertain_year_warning_is_separate_from_description():
+    text = "Diagnóstico de la empresa: 10 de noviembre."
+    description = "Preparar el diagnóstico. El año no se especifica explícitamente en el texto, por lo que la fecha debe revisarse."
+    result = parse_proposals(payload(source_excerpt=text, due_date=None,
+                                     year_unconfirmed=True, description=description), text)
+    assert result[0]["description"] == "Preparar el diagnóstico."
+    assert result[0]["year_unconfirmed"] is True
+
+
+def test_short_uncertain_year_warning_is_separate_from_description():
+    text = "Diagnóstico de la empresa: 10 de noviembre."
+    result = parse_proposals(payload(source_excerpt=text, due_date=None,
+                                     year_unconfirmed=True,
+                                     description="Preparar el diagnóstico. El año no se especifica en el texto."), text)
+    assert result[0]["description"] == "Preparar el diagnóstico."
+    assert result[0]["year_unconfirmed"] is True
+
+
+def test_alternative_week_dates_are_kept_out_of_description():
+    text = "Exposición del proyecto: semana A 20 octubre, semana B 27 octubre."
+    reason = "Fechas alternativas entre semana A (20 octubre) y semana B (27 octubre)."
+    result = parse_proposals(payload(source_excerpt=text, due_date=None,
+                                     description=f"Presentar el proyecto. {reason}"), text)
+    assert result[0]["description"] == "Presentar el proyecto."
+    assert result[0]["date_warning_reason"] == reason
+    assert "date_warning_reason" in OUTPUT_SCHEMA["properties"]["activities"]["items"]["required"]
+
+
 @pytest.mark.parametrize("change", [
     {"title": "  "}, {"title": "x" * 241}, {"title": 123},
     {"description": None}, {"description": "x" * 5001},
     {"due_date": "2026-02-30"}, {"due_date": "20/11/2026"},
     {"due_date": 123}, {"due_date": "2026-11-20T00:00:00"},
     {"review_required": "false"}, {"source_excerpt": "Invented evidence"},
+    {"year_unconfirmed": "true"},
     {"source_excerpt": " "}, {"unexpected": "field"},
 ])
 def test_invalid_proposals_are_rejected(change):

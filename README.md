@@ -17,7 +17,7 @@ Instala Python 3.11+, pip y PostgreSQL. En Ubuntu, crea rol y base interactivos 
 sudo -u postgres psql
 ```
 
-Dentro de `psql`: `CREATE ROLE gestor LOGIN;`, luego `\password gestor`, `CREATE DATABASE gestor_tareas OWNER gestor;` y `\q`. Copia `.env.example` a `.env`, configura `DATABASE_URL` con la contraseña local y un `JWT_SECRET` aleatorio largo. La aplicación **no** ejecuta migraciones automáticamente: aplica `sql/001_init.sql` y las migraciones `002` a `008` en orden. Para `psql`, usa una URL estándar `postgresql://` o sus parámetros `host`, `user` y `dbname`; la URL `postgresql+psycopg://` del backend es exclusiva de SQLAlchemy.
+Dentro de `psql`: `CREATE ROLE gestor LOGIN;`, luego `\password gestor`, `CREATE DATABASE gestor_tareas OWNER gestor;` y `\q`. Copia `.env.example` a `.env`, configura `DATABASE_URL` con la contraseña local y un `JWT_SECRET` aleatorio largo. La aplicación **no** ejecuta migraciones automáticamente: aplica `sql/001_init.sql` y las migraciones `002` a `011` en orden. Para `psql`, usa una URL estándar `postgresql://` o sus parámetros `host`, `user` y `dbname`; la URL `postgresql+psycopg://` del backend es exclusiva de SQLAlchemy.
 
 ```bash
 cd ~/proyectos/GestorDeTarea_Backend
@@ -26,6 +26,16 @@ pip install -r requirements-dev.txt  # incluye pytest para las comprobaciones lo
 cp .env.example .env  # edita secretos localmente; nunca los subas
 uvicorn app.main:app --reload
 ```
+
+## Recordatorios por correo
+
+Aplica `sql/migrations/009_activity_reminders.sql` y configura en el `.env` del backend `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` y `SMTP_FROM_EMAIL` con los datos de tu proveedor de correo. El puerto 587 usa STARTTLS; para SSL directo configura `SMTP_USE_SSL=true` y normalmente el puerto 465. `REMINDER_TIMEZONE` determina el día local (por defecto `America/Costa_Rica`). Reinicia el backend.
+
+Mientras FastAPI esté en ejecución, revisa las actividades al iniciar y cada hora. Envía un correo a la dirección registrada cuando una actividad pendiente de un curso activo vence exactamente dos días después del día local. Guarda cada envío por actividad y fecha para no repetirlo; si el servidor de correo falla, vuelve a intentarlo en la próxima revisión. Si el backend está apagado durante todo ese día, no puede enviar el aviso. No se envían correos hasta configurar SMTP.
+
+La migración `010_activity_year_warning.sql` guarda por separado el aviso de año sin confirmar y retira de las descripciones existentes la frase estándar que lo explicaba. Aplícala antes de iniciar el backend actualizado.
+
+La migración `011_activity_date_warning_reason.sql` guarda por separado el motivo de una fecha sin confirmar. Aplícala antes de iniciar el backend actualizado.
 
 ## Conectar Supabase Postgres
 
@@ -50,6 +60,9 @@ Este proyecto conserva FastAPI como API y autenticación; Supabase aloja únicam
    \i sql/migrations/006_document_duplicates.sql
    \i sql/migrations/007_document_drafts.sql
    \i sql/migrations/008_session_and_request_limits.sql
+   \i sql/migrations/009_activity_reminders.sql
+   \i sql/migrations/010_activity_year_warning.sql
+   \i sql/migrations/011_activity_date_warning_reason.sql
    \q
    ```
 

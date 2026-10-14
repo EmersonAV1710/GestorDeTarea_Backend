@@ -28,7 +28,7 @@ def extractor(monkeypatch):
     return calls
 
 
-def test_same_pending_file_with_proposals_resumes_without_reanalysis_even_with_new_name_or_course(api, extractor):
+def test_same_pending_file_resumes_in_new_course_after_explicit_move(api, extractor):
     client, db, owner, course, _ = api
     first = upload(client, course)
     assert first.status_code == 200
@@ -38,10 +38,14 @@ def test_same_pending_file_with_proposals_resumes_without_reanalysis_even_with_n
     another = Course(user_id=owner.id, name="Otro curso")
     db.add(another)
     db.commit()
+    blocked = upload(client, another, filename="renombrado.txt")
+    assert blocked.status_code == 409
+    moved = client.patch(f"/api/documents/{document.id}", json={"course_id": str(another.id)})
+    assert moved.status_code == 200
     response = upload(client, another, filename="renombrado.txt")
     assert response.status_code == 200
     assert response.json()["document_id"] == first.json()["document_id"]
-    assert response.json()["course_id"] == str(course.id)
+    assert response.json()["course_id"] == str(another.id)
     assert len(extractor) == 1
     assert db.scalar(select(func.count()).select_from(Document)) == 2
 

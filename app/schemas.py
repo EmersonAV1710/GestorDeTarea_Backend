@@ -77,8 +77,10 @@ class Proposal(BaseModel):
     activity_type: ActivityType = "otro"
     title: str = Field(min_length=1, max_length=240, strict=True)
     description: str = Field(default="", max_length=5000, strict=True)
+    date_warning_reason: str = Field(default="", max_length=1000, strict=True)
     due_date: date | None = None
     review_required: bool = Field(default=False, strict=True)
+    year_unconfirmed: bool = Field(default=False, strict=True)
 
     @field_validator("title", mode="before")
     @classmethod
@@ -103,10 +105,18 @@ class Proposal(BaseModel):
 
 class ActivityUpdate(Proposal):
     model_config = ConfigDict(extra="forbid")
+    status: Literal["pending", "completed"] | None = None
 
 class ActivityOut(Proposal): id:UUID; course_id:UUID; document_id:UUID|None; status:str
 class ConfirmProposal(Proposal):
     status: Literal["pending", "completed"] = "pending"
+
+    @model_validator(mode="after")
+    def confirmed_year_matches_date(self):
+        if self.due_date is not None:
+            self.year_unconfirmed = False
+            self.date_warning_reason = ""
+        return self
 
 class ManualActivityIn(ConfirmProposal):
     model_config = ConfigDict(extra="forbid")
@@ -115,3 +125,7 @@ class ManualActivityIn(ConfirmProposal):
 class ConfirmIn(BaseModel):
     document_id: UUID
     activities: list[ConfirmProposal] = Field(min_length=1, max_length=200)
+
+class ReviewCourseUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    course_id: UUID

@@ -11,12 +11,13 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .db import Base,engine,get_db
 from .models import User,Course,Document,Activity,RevokedToken
-from .schemas import Login,RegisterIn,CourseIn,CourseOut,ConfirmIn,ManualActivityIn,ActivityType,ActivityUpdate
+from .schemas import Login,RegisterIn,CourseIn,CourseOut,ConfirmIn,ManualActivityIn,ActivityType,ActivityUpdate,ReviewCourseUpdate
 from .security import verify_password,hash_password,token_for,user_id,token_digest,token_claims
 from .request_limits import enforce_request_limits, conflict_insert
 from .ai import extract_activities, AnalysisError
 from .document_text import extract_document_text
-app=FastAPI(title="Gestor de tareas API",version="1.0.0",dependencies=[Depends(enforce_request_limits)])
+from .reminders import reminder_lifespan
+app=FastAPI(title="Gestor de tareas API",version="1.0.0",dependencies=[Depends(enforce_request_limits)],lifespan=reminder_lifespan)
 app.add_middleware(CORSMiddleware,allow_origins=[x.strip() for x in settings.cors_origins.split(",") if x.strip()],allow_credentials=True,allow_methods=["*"] ,allow_headers=["*"])
 def current_user(authorization:str|None=Header(default=None),db:Session=Depends(get_db)):
     if not authorization or not authorization.startswith("Bearer "): raise HTTPException(401,"Inicia sesión")
@@ -28,7 +29,7 @@ def current_user(authorization:str|None=Header(default=None),db:Session=Depends(
     if not user: raise HTTPException(401,"Cuenta no encontrada")
     return user
 def course_dict(c): return {"id":c.id,"name":c.name,"code":c.code,"term":c.term,"is_active":c.is_active}
-def activity_dict(a): return {"activity_type":a.activity_type,"id":a.id,"title":a.title,"description":a.description,"due_date":a.due_date,"review_required":a.review_required,"status":a.status,"course_id":a.course_id,"document_id":a.document_id}
+def activity_dict(a): return {"activity_type":a.activity_type,"id":a.id,"title":a.title,"description":a.description,"date_warning_reason":a.date_warning_reason,"due_date":a.due_date,"review_required":a.review_required,"year_unconfirmed":a.year_unconfirmed,"status":a.status,"course_id":a.course_id,"document_id":a.document_id}
 @app.get("/api/health")
 def health(): return {"status":"ok"}
 @app.post("/api/auth/register",status_code=201)
@@ -168,6 +169,24 @@ def saved_documents(user: User = Depends(current_user), db: Session = Depends(ge
         .group_by(Document.id).order_by(Document.filename, Document.id))
     return [{"document_id": document.id, "course_id": document.course_id, "filename": document.filename,
              "activity_count": count} for document, count in rows]
+
+
+@app.patch("/api/documents/{document_id}")
+def change_review_course(document_id: UUID, body: ReviewCourseUpdate,
+                         user: User = Depends(current_user), db: Session = Depends(get_db)):
+    lock_activity_owner(user, db)
+    document = db.scalar(select(Document).where(Document.id == document_id, Document.user_id == user.id).with_for_update())
+    if document is None:
+        raise HTTPException(404, "Revisión no encontrada")
+    if document.is_confirmed or db.scalar(select(Activity.id).where(Activity.document_id == document.id).limit(1)):
+        raise HTTPException(409, "Esta revisión ya tiene actividades guardadas")
+    course = owned_course(body.course_id, user, db)
+    if not course.is_active:
+        raise HTTPException(409, "El curso está inactivo. Reactívalo antes de cambiar la revisión")
+    document.course_id = course.id
+    db.commit()
+    db.refresh(document)
+    return document_dict(document)
 
 
 @app.delete("/api/documents/{document_id}", status_code=204)
@@ -318,8 +337,19 @@ def update_activity(activity_id: UUID, body: ActivityUpdate, user: User = Depend
     lock_activity_owner(user, db)
     activity = owned_activity(activity_id, user, db)
     reject_duplicate_activities([body], activity.course_id, user, db, exclude_id=activity.id)
-    for field, value in body.model_dump().items():
+    changes = body.model_dump(exclude={"status"})
+    if "year_unconfirmed" not in body.model_fields_set:
+        changes.pop("year_unconfirmed")
+    if "date_warning_reason" not in body.model_fields_set:
+        changes.pop("date_warning_reason")
+    for field, value in changes.items():
         setattr(activity, field, value)
+    if activity.due_date is not None:
+        activity.year_unconfirmed = False
+        activity.date_warning_reason = ""
+    if body.status is not None and body.status != activity.status:
+        activity.status = body.status
+        activity.completed_at = datetime.now(timezone.utc) if body.status == "completed" else None
     db.commit()
     db.refresh(activity)
     return activity_dict(activity)

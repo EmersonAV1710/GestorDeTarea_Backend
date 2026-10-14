@@ -22,8 +22,10 @@ class ExtractedProposal(Proposal):
     activity_type: ActivityType = Field(...)
     model_config = ConfigDict(extra="forbid")
     description: str = Field(max_length=5000, strict=True)
+    date_warning_reason: str = Field(default="", max_length=1000, strict=True)
     due_date: date | None
     review_required: bool = Field(strict=True)
+    year_unconfirmed: bool = Field(default=False, strict=True)
     source_excerpt: str = Field(min_length=1, max_length=1000, strict=True)
 
 
@@ -41,12 +43,14 @@ OUTPUT_SCHEMA = {
             "properties": {
                 "activity_type": {"type": "string", "enum": ["tarea", "proyecto", "examen", "exposicion", "laboratorio", "lectura", "otro"]},
                 "title": {"type": "string", "description": "Título no vacío, de hasta 240 caracteres."},
-                "description": {"type": "string", "description": "Qué debe hacer o entregar el estudiante. Si la fecha o el grupo es ambiguo, explica brevemente por qué debe revisarse. Máximo 5000 caracteres; cadena vacía si no hay detalles."},
+                "description": {"type": "string", "description": "Solo qué debe hacer o entregar el estudiante. No incluyas avisos ni explicaciones sobre fechas inciertas. Máximo 5000 caracteres; cadena vacía si no hay detalles."},
+                "date_warning_reason": {"type": "string", "description": "Si due_date es null por alternativas entre grupos, fechas contradictorias u otra duda, explica aquí el motivo concreto. No repitas el motivo en description. Cadena vacía si solo falta el año o no hay motivo concreto. Máximo 1000 caracteres."},
                 "due_date": {"type": ["string", "null"], "description": "Fecha de entrega o realización, YYYY-MM-DD, solo cuando sea inequívoca; null en caso contrario. No uses la fecha de asignación."},
                 "review_required": {"type": "boolean", "description": "true si la fecha falta, hay fechas contradictorias, depende del grupo o cualquier dato necesita comprobación."},
+                "year_unconfirmed": {"type": "boolean", "description": "true solo si se encontró día y mes para esta actividad pero no se pudo determinar un año inequívoco en el documento. En ese caso due_date debe ser null y review_required true."},
                 "source_excerpt": {"type": "string", "description": "Cita literal, breve y continua del texto de entrada que nombra la actividad. No unas celdas o partes separadas de una tabla. Máximo 1000 caracteres."},
             },
-            "required": ["activity_type", "title", "description", "due_date", "review_required", "source_excerpt"],
+            "required": ["activity_type", "title", "description", "date_warning_reason", "due_date", "review_required", "year_unconfirmed", "source_excerpt"],
             "additionalProperties": False,
         },
     }},
@@ -77,14 +81,18 @@ Una actividad evaluada mencionada en la evaluación y otra vez en el cronograma
 produce una sola propuesta. No crees una actividad por cada mención del mismo
 entregable. Si hay fechas alternativas para grupos o semanas A/B y no se conoce el
 grupo del estudiante, no elijas una: due_date=null, review_required=true y explica
-las alternativas en description. Si dos secciones contradicen la sesión o fecha,
-due_date=null, review_required=true y explica la discrepancia. Para una fecha sin
-año, usa el año del periodo del curso solo si es inequívoco. Si falta día, mes o
-año, usa due_date=null y review_required=true. Nunca inventes una fecha.
+las alternativas en date_warning_reason. Si dos secciones contradicen la sesión o fecha,
+due_date=null, review_required=true y explica la discrepancia en date_warning_reason. Para una fecha sin
+año, usa el año del periodo del curso solo si es inequívoco. Si se encontró día y
+mes pero no se puede confirmar el año, usa due_date=null, review_required=true y
+year_unconfirmed=true. Si falta día o mes, usa due_date=null, review_required=true
+y year_unconfirmed=false. En los demás casos year_unconfirmed=false. Nunca inventes
+una fecha.
 
 Clasifica activity_type como tarea, proyecto, examen, exposicion, laboratorio,
-lectura u otro. Usa un título corto y específico; en description resume qué se
-entrega y cualquier incertidumbre que el estudiante deba revisar. source_excerpt
+lectura u otro. Usa un título corto y específico; en description resume solo qué se
+entrega. Escribe toda incertidumbre sobre fechas en date_warning_reason, salvo la falta
+de año: indícala solo con year_unconfirmed, sin agregarla a description. source_excerpt
 debe ser una cita literal, continua y breve del texto recibido que nombre esa
 actividad, por ejemplo "Entrega Tarea 1.". La fecha puede estar en otra parte de
 la misma fila; no hace falta que figure en la cita. No unas celdas, filas o
@@ -93,6 +101,12 @@ fragmentos separados para construirla y no reescribas sus palabras.
 Si no hay actividades explícitas devuelve activities=[]. Devuelve como máximo 200
 actividades; títulos de hasta 240 caracteres, descripciones de hasta 5000 y citas
 de hasta 1000. Responde exclusivamente con el JSON solicitado."""
+
+
+LEGACY_DATE_WARNING = re.compile(
+    r"(?:^|\s)((?:Fechas? alternativas? entre|La fecha (?:depende|varía)|Las fechas? (?:dependen|varían)|Hay (?:dos|varias) fechas|Fechas? (?:contradictorias?|por confirmar)|La fecha no se (?:especifica|indica))[^.!?]*[.!?]?)\s*$",
+    re.IGNORECASE,
+)
 
 
 def normalized(text: str) -> str:
@@ -143,6 +157,19 @@ def parse_proposals(content: str, text: str, *, allow_unverified: bool = False) 
         verified_count = 0
         canonical_source = canonical_document(text)
         for index, activity in enumerate(extraction.activities, 1):
+            if activity.due_date is None:
+                legacy_reason = LEGACY_DATE_WARNING.search(activity.description)
+                if legacy_reason:
+                    activity.date_warning_reason = activity.date_warning_reason or legacy_reason.group(1).strip()
+                    activity.description = activity.description[:legacy_reason.start()].strip()
+            if activity.year_unconfirmed:
+                activity.due_date = None
+                activity.review_required = True
+                activity.description = re.sub(
+                    r"\s*El año no se especifica(?: explícitamente)? en el texto(?:, por lo que la fecha debe revisarse)?\.\s*$",
+                    "", activity.description, flags=re.IGNORECASE).strip()
+            if activity.due_date is not None:
+                activity.date_warning_reason = ""
             excerpt = document_excerpt(activity.source_excerpt, text, canonical_source)
             if excerpt is None:
                 if not allow_unverified:
@@ -164,7 +191,7 @@ def parse_proposals(content: str, text: str, *, allow_unverified: bool = False) 
     except ValidationError as exc:
         problem = exc.errors(include_input=False, include_url=False)[0]
         location = problem["loc"]
-        labels = {"title": "título", "description": "descripción", "activity_type": "tipo de entrega", "due_date": "fecha", "review_required": "marca de revisión", "source_excerpt": "fragmento del documento"}
+        labels = {"title": "título", "description": "descripción", "date_warning_reason": "motivo de la fecha", "activity_type": "tipo de entrega", "due_date": "fecha", "review_required": "marca de revisión", "year_unconfirmed": "año sin confirmar", "source_excerpt": "fragmento del documento"}
         field = labels.get(location[-1] if location else None)
         if field and len(location) > 1 and isinstance(location[1], int):
             message = f"La actividad {location[1] + 1} contiene un dato no válido: {field}. Vuelve a analizar el documento."

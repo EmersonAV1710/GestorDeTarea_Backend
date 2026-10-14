@@ -40,11 +40,20 @@ class Activity(Base):
     activity_type: Mapped[str]=mapped_column(String(20),default="otro",server_default="otro",nullable=False)
     title: Mapped[str]=mapped_column(String)
     description: Mapped[str]=mapped_column(Text,default="")
+    date_warning_reason: Mapped[str]=mapped_column(Text,default="",server_default="",nullable=False)
     due_date: Mapped[date|None]=mapped_column(Date,nullable=True,index=True)
     status: Mapped[str]=mapped_column(String,default="pending")
     review_required: Mapped[bool]=mapped_column(Boolean,default=False)
+    year_unconfirmed: Mapped[bool]=mapped_column(Boolean,default=False,server_default="false",nullable=False)
     created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),server_default=func.now())
     completed_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+
+
+class ActivityReminder(Base):
+    __tablename__ = "activity_reminders"
+    activity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("activities.id", ondelete="CASCADE"), primary_key=True)
+    due_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class RevokedToken(Base):

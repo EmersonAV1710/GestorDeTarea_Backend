@@ -123,6 +123,44 @@ def test_edit_persists_fields_and_keeps_the_owner_course_document_and_status(api
     assert activity.document_id == document.id
 
 
+def test_edit_past_date_can_mark_delivered_or_overdue(api):
+    client, db, _, _, _ = api
+    activity = add_activity(api)
+    payload = {"title": activity.title, "description": activity.description,
+               "activity_type": activity.activity_type, "due_date": "2000-01-01", "review_required": False}
+
+    delivered = client.patch(f"/api/activities/{activity.id}", json={**payload, "status": "completed"})
+    assert delivered.status_code == 200
+    assert delivered.json()["status"] == "completed"
+    db.refresh(activity)
+    assert activity.completed_at is not None
+    assert activity.due_date == date(2000, 1, 1)
+
+    overdue = client.patch(f"/api/activities/{activity.id}", json={**payload, "status": "pending"})
+    assert overdue.status_code == 200
+    assert overdue.json()["status"] == "pending"
+    db.refresh(activity)
+    assert activity.completed_at is None
+
+
+def test_edit_preserves_year_warning_until_a_date_is_confirmed(api):
+    client, db, _, _, _ = api
+    activity = add_activity(api)
+    activity.due_date = None
+    activity.year_unconfirmed = True
+    db.commit()
+    payload = {"title": activity.title, "description": "Diagnóstico actualizado",
+               "activity_type": activity.activity_type, "review_required": True}
+
+    unchanged = client.patch(f"/api/activities/{activity.id}", json={**payload, "due_date": None})
+    assert unchanged.status_code == 200
+    assert unchanged.json()["year_unconfirmed"] is True
+
+    dated = client.patch(f"/api/activities/{activity.id}", json={**payload, "due_date": "2026-11-10"})
+    assert dated.status_code == 200
+    assert dated.json()["year_unconfirmed"] is False
+
+
 def test_deleting_the_last_activity_also_removes_its_document(api):
     client, db, _, course, document = api
     activity = add_activity(api)
@@ -184,7 +222,7 @@ def test_mutations_cannot_change_another_users_activity(api, method, suffix):
 
 @pytest.mark.parametrize("fields", [
     {"title": " "}, {"title": "Nueva", "activity_type": "invalido"},
-    {"title": "Nueva", "due_date": "2026-02-30"}, {"title": "Nueva", "status": "completed"},
+    {"title": "Nueva", "due_date": "2026-02-30"}, {"title": "Nueva", "status": "expired"},
     {"title": "Nueva", "user_id": str(uuid4())},
 ])
 def test_invalid_edits_do_not_modify_the_activity(api, fields):
