@@ -117,3 +117,7 @@ En bases existentes, aplica la migración `sql/migrations/002_auth_lockout.sql` 
 ```bash
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f sql/migrations/002_auth_lockout.sql
 ```
+
+## Preferencias de la cuenta
+
+Aplica `sql/migrations/012_user_preferences.sql` antes de iniciar esta versión. `GET /api/profile/preferences` devuelve las preferencias del usuario autenticado (o `null` si nunca las guardó). `PATCH /api/profile/preferences` actualiza solo los campos enviados: `theme`, `accent`, `background`, `language` y `sounds` (`on`/`off`), con valores validados. El frontend carga las preferencias al iniciar o restaurar la sesión y las guarda al cambiarlas. La primera vez tras actualizar, importa las preferencias locales de ese perfil si la cuenta todavía no tiene preferencias en el servidor. El invitado sigue usando almacenamiento local.

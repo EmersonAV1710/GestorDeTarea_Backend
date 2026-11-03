@@ -129,3 +129,13 @@ class ConfirmIn(BaseModel):
 class ReviewCourseUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     course_id: UUID
+
+
+class PreferencesUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    sounds: Literal["on", "off"] = "on"
+    theme: Literal["light", "dark", "system"] = "system"
+    dark_style: Literal["gray", "black"] = "gray"
+    accent: Literal["default", "blue", "violet", "green", "rose", "orange", "teal", "red", "amber", "lime", "cyan", "indigo", "fuchsia", "silver", "coral", "ocean", "grape", "copper", "olive", "raspberry"] = "default"
+    background: Literal["default", "blue", "violet", "mint", "rose", "sand", "slate", "forest", "lavender", "peach", "lagoon", "cherry", "coffee", "galaxy", "porcelain", "sky", "pistachio", "vanilla", "petals", "lilac"] = "default"
+    language: Literal["es", "en"] = "es"

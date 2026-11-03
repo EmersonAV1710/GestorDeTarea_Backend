@@ -10,8 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from .config import settings
 from .db import Base,engine,get_db
-from .models import User,Course,Document,Activity,RevokedToken
-from .schemas import Login,RegisterIn,CourseIn,CourseOut,ConfirmIn,ManualActivityIn,ActivityType,ActivityUpdate,ReviewCourseUpdate
+from .models import UserPreferences,User,Course,Document,Activity,RevokedToken
+from .schemas import PreferencesUpdate,Login,RegisterIn,CourseIn,CourseOut,ConfirmIn,ManualActivityIn,ActivityType,ActivityUpdate,ReviewCourseUpdate
 from .security import verify_password,hash_password,token_for,user_id,token_digest,token_claims
 from .request_limits import enforce_request_limits, conflict_insert
 from .ai import extract_activities, AnalysisError
@@ -381,3 +381,25 @@ def reopen_activity(activity_id: UUID, user: User = Depends(current_user), db: S
 def complete(activity_id:UUID,user:User=Depends(current_user),db:Session=Depends(get_db)):
     a=owned_activity(activity_id,user,db)
     a.status="completed";a.completed_at=datetime.now(timezone.utc);db.commit();db.refresh(a);return activity_dict(a)
+
+
+@app.get("/api/profile/preferences")
+def get_preferences(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    row = db.get(UserPreferences, user.id)
+    return row.values if row else None
+
+
+@app.patch("/api/profile/preferences")
+def update_preferences(body: PreferencesUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    values = body.model_dump(exclude_unset=True)
+    # Merge in the database so concurrent changes to different settings are preserved.
+    from sqlalchemy import cast
+    from sqlalchemy.dialects.postgresql import JSONB
+    statement = conflict_insert(db, UserPreferences).values(user_id=user.id, values=values)
+    statement = statement.on_conflict_do_update(
+        index_elements=[UserPreferences.user_id],
+        set_={"values": cast(UserPreferences.values, JSONB).op("||")(cast(statement.excluded["values"], JSONB))},
+    )
+    db.execute(statement)
+    db.commit()
+    return db.get(UserPreferences, user.id).values

@@ -12,6 +12,11 @@ class User(Base):
     password_hash: Mapped[str]=mapped_column(String)
     failed_login_attempts: Mapped[int]=mapped_column(default=0, server_default="0", nullable=False)
     locked_until: Mapped[datetime|None]=mapped_column(DateTime(timezone=True), nullable=True)
+class UserPreferences(Base):
+    __tablename__ = "user_preferences"
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    values: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
 class Course(Base):
     __tablename__="courses"
     id: Mapped[uuid.UUID]=mapped_column(UUID(as_uuid=True),primary_key=True,default=uuid.uuid4)
